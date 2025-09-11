@@ -20,14 +20,20 @@ class FacultyService {
       // Get total count
       const totalCount = await Faculty.countDocuments(query);
       
-      // Get faculties with pagination
+      // Get faculties with pagination and map fields for frontend compatibility
       const faculties = await Faculty.find(query)
         .sort({ name: 1 })
         .skip(skip)
         .limit(pageSize);
 
+      // Map to include both _id and id for frontend compatibility
+      const mappedFaculties = faculties.map(faculty => ({
+        ...faculty.toObject(),
+        id: faculty._id
+      }));
+
       return {
-        List: faculties,
+        List: mappedFaculties,
         Count: totalCount
       };
     } catch (error) {

@@ -31,8 +31,14 @@ class DepartmentService {
         .skip(skip)
         .limit(pageSize);
 
+      // Map to include both _id and id for frontend compatibility
+      const mappedDepartments = departments.map(dept => ({
+        ...dept.toObject(),
+        id: dept._id
+      }));
+
       return {
-        List: departments,
+        List: mappedDepartments,
         Count: totalCount
       };
     } catch (error) {
@@ -52,6 +58,12 @@ class DepartmentService {
         match: { deletedAt: null }
       });
 
+      // Return the original Mongoose document for CRUD operations
+      // Add id as virtual property for frontend compatibility
+      if (department) {
+        department.id = department._id;
+      }
+      
       return department;
     } catch (error) {
       console.error('Error getting department:', error);

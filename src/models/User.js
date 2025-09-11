@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 
-// User Schema (exact ApplicationUser replica)
+// User Schema (exact ApplicationUser replica with numeric ID)
 const userSchema = new mongoose.Schema({
+  _id: {
+    type: Number,
+    required: true
+  },
   userName: { 
     type: String, 
     required: true, 
@@ -37,7 +41,8 @@ const userSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true, // Adds createdAt and updatedAt
-  collection: 'Users'
+  collection: 'Users',
+  _id: false // Disable auto-generated ObjectId
 });
 
 // Virtual for full name

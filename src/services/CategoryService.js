@@ -45,7 +45,7 @@ class CategoryService {
               {
                 $match: {
                   $expr: { $eq: ['$categoryId', '$$categoryId'] },
-                  userId: currentUser ? currentUser._id.toString() : null,
+                  userId: currentUser && currentUser._id ? currentUser._id : null,
                   deletedAt: null
                 }
               },
@@ -63,19 +63,20 @@ class CategoryService {
         },
         {
           $project: {
-            Id: '$_id',
-            Name: '$name',
-            Desc: { $ifNull: ['$description', ''] },
-            SortOrder: '$sortOrder',
-            TotalCount: { $size: '$parameters' },
-            SubmittedCount: { $size: '$submittedRatings' },
+            id: '$_id',
+            _id: '$_id', // Keep both for compatibility
+            name: '$name',
+            description: { $ifNull: ['$description', ''] },
+            sortOrder: '$sortOrder',
+            totalCount: { $size: '$parameters' },
+            submittedCount: { $size: '$submittedRatings' },
             createdAt: 1
           }
         },
-        { $sort: { SortOrder: -1 } },
+        { $sort: { sortOrder: -1 } },
         { $skip: skip },
         { $limit: pageSize },
-        { $sort: { Id: 1 } }
+        { $sort: { id: 1 } }
       ]);
 
       // Get total count

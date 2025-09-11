@@ -23,6 +23,35 @@ class YearlyRatingController {
     }
   }
 
+  // GET /api/yearly-rating/all (new method for ratings report)
+  async getAllRatings(req, res) {
+    try {
+      const { page = 1, pageSize = 10, departmentId, facultyId, cycle, category } = req.query;
+      
+      const filters = {
+        departmentId: departmentId || '',
+        facultyId: facultyId || '',
+        cycle: cycle || '',
+        category: category || ''
+      };
+
+      const result = await RatingService.getAllRatings(filters, parseInt(page), parseInt(pageSize), req);
+
+      return res.json({
+        Status: true,
+        Data: result,
+        Message: "Ratings Fetched Successfully!"
+      });
+
+    } catch (error) {
+      console.error('Get all ratings error:', error);
+      return res.status(500).json({
+        Status: false,
+        Message: `Internal server error: ${error.message}`
+      });
+    }
+  }
+
   // GET /api/yearly-rating (exact replica)
   async getPastRatings(req, res) {
     try {
@@ -45,6 +74,29 @@ class YearlyRatingController {
 
     } catch (error) {
       console.error('Get past ratings error:', error);
+      return res.status(500).json({
+        Status: false,
+        Message: `Internal server error: ${error.message}`
+      });
+    }
+  }
+
+  // GET /api/yearly-rating/by-parameter/:parameterId
+  async getRatingsByParameter(req, res) {
+    try {
+      const { parameterId } = req.params;
+      const { category } = req.query;
+
+      const ratings = await RatingService.getRatingsByParameter(parameterId, category, req);
+
+      return res.json({
+        Status: true,
+        Data: ratings,
+        Message: "Ratings Fetched!"
+      });
+
+    } catch (error) {
+      console.error('Get ratings by parameter error:', error);
       return res.status(500).json({
         Status: false,
         Message: `Internal server error: ${error.message}`

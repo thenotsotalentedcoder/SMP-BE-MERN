@@ -12,7 +12,7 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:4200',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
 }));
 
@@ -27,6 +27,7 @@ app.use('/api/parameters', require('./src/routes/parameterRoutes'));
 app.use('/api/faculty', require('./src/routes/facultyRoutes'));
 app.use('/api/departments', require('./src/routes/departmentRoutes'));
 app.use('/api/yearly-rating', require('./src/routes/yearlyRatingRoutes'));
+app.use('/api/dashboard', require('./src/routes/dashboardRoutes'));
 
 // Basic health check
 app.get('/', (req, res) => {

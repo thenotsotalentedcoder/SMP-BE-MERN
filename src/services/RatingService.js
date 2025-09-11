@@ -5,6 +5,166 @@ const Department = require('../models/Department');
 const HelperService = require('./HelperService');
 
 class RatingService {
+  // Get all ratings with filtering and pagination (for ratings report)
+  async getAllRatings(filters, page = 1, pageSize = 10, context) {
+    try {
+      const currentUser = await HelperService.getLoggedUser(context);
+      if (!currentUser) {
+        throw new Error('User not found or not logged in');
+      }
+
+      // Build match conditions
+      let matchConditions = {
+        deletedAt: null
+      };
+
+      // Build aggregation pipeline
+      const pipeline = [
+        {
+          $match: matchConditions
+        },
+        {
+          $lookup: {
+            from: 'Users',
+            localField: 'userId',
+            foreignField: '_id',
+            as: 'user'
+          }
+        },
+        {
+          $unwind: '$user'
+        },
+        {
+          $lookup: {
+            from: 'Departments',
+            let: { deptId: '$user.deptId' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$_id', '$$deptId'] },
+                  deletedAt: null
+                }
+              }
+            ],
+            as: 'department'
+          }
+        },
+        {
+          $unwind: { path: '$department', preserveNullAndEmptyArrays: true }
+        },
+        {
+          $lookup: {
+            from: 'Faculties',
+            let: { facultyId: '$user.facultyId' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$_id', '$$facultyId'] },
+                  deletedAt: null
+                }
+              }
+            ],
+            as: 'faculty'
+          }
+        },
+        {
+          $unwind: { path: '$faculty', preserveNullAndEmptyArrays: true }
+        },
+        {
+          $lookup: {
+            from: 'Categories',
+            localField: 'categoryId',
+            foreignField: '_id',
+            as: 'category'
+          }
+        },
+        {
+          $unwind: { path: '$category', preserveNullAndEmptyArrays: true }
+        }
+      ];
+
+      // Add filters
+      const filterMatch = {};
+      
+      if (filters.departmentId && filters.departmentId !== '') {
+        filterMatch['department._id'] = filters.departmentId;
+      }
+      
+      if (filters.facultyId && filters.facultyId !== '') {
+        filterMatch['faculty._id'] = filters.facultyId;
+      }
+      
+      if (filters.cycle && filters.cycle !== '') {
+        filterMatch['ratingValues.year'] = { $regex: filters.cycle, $options: 'i' };
+      }
+      
+      if (filters.category && filters.category !== '') {
+        filterMatch['category.name'] = { $regex: filters.category, $options: 'i' };
+      }
+
+      if (Object.keys(filterMatch).length > 0) {
+        pipeline.push({ $match: filterMatch });
+      }
+
+      // Add projection
+      pipeline.push({
+        $project: {
+          id: '$_id',
+          _id: '$_id',
+          departmentId: '$department._id',
+          facultyId: '$faculty._id',
+          cycle: { $arrayElemAt: ['$ratingValues.year', 0] }, // Get first year as cycle
+          category: '$category.name',
+          values: {
+            $map: {
+              input: '$ratingValues',
+              as: 'val',
+              in: {
+                id: '$$val._id',
+                parameterId: '$parameterId',
+                value: '$$val.actualValue',
+                textValue: '$$val.textValue',
+                year: '$$val.year'
+              }
+            }
+          },
+          parameterName: 1,
+          createdAt: 1,
+          updatedAt: 1
+        }
+      });
+
+      // Add sorting
+      pipeline.push({ $sort: { createdAt: -1 } });
+
+      // Get total count
+      const totalPipeline = [...pipeline, { $count: 'total' }];
+      const totalResult = await YearlyRating.aggregate(totalPipeline);
+      const total = totalResult.length > 0 ? totalResult[0].total : 0;
+
+      // Add pagination
+      const skip = (page - 1) * pageSize;
+      pipeline.push({ $skip: skip });
+      pipeline.push({ $limit: pageSize });
+
+      const ratings = await YearlyRating.aggregate(pipeline);
+
+      return {
+        data: ratings,
+        pagination: {
+          page: page,
+          pageSize: pageSize,
+          total: total,
+          pages: Math.ceil(total / pageSize)
+        }
+      };
+
+    } catch (error) {
+      console.error('Error getting all ratings:', error);
+      throw error;
+    }
+  }
+
   // Submit ratings (exact replica of .NET SubmitRatings)
   async submitRatings(ratingsData, context) {
     try {
@@ -32,7 +192,7 @@ class RatingService {
         // Check if rating already exists
         const existingRating = await YearlyRating.findOne({
           parameterId: parameterId,
-          userId: currentUser._id.toString(),
+          userId: currentUser._id,
           deletedAt: null
         });
 
@@ -49,7 +209,7 @@ class RatingService {
             parameterId: parameterId, // Using converted integer parameter ID
             parameterName: rating.ParameterName,
             ratingYear: rating.RatingYear,
-            userId: currentUser._id.toString()
+            userId: currentUser._id
           });
           await newRating.save();
         }
@@ -83,13 +243,53 @@ class RatingService {
       // Get ratings for this user and category
       const ratings = await YearlyRating.find({
         categoryId: category._id, // Now using integer category ID
-        userId: currentUser._id.toString(),
+        userId: currentUser._id,
         deletedAt: null
       }).sort({ createdAt: -1 });
 
       return ratings;
     } catch (error) {
       console.error('Error getting past ratings:', error);
+      throw error;
+    }
+  }
+
+  // Get ratings by parameter
+  async getRatingsByParameter(parameterId, category, context) {
+    try {
+      const currentUser = await HelperService.getLoggedUser(context);
+      if (!currentUser) {
+        throw new Error('User not found or not logged in');
+      }
+
+      // Find ratings for this parameter by current user
+      let matchConditions = {
+        parameterId: parseInt(parameterId),
+        userId: currentUser._id,
+        deletedAt: null
+      };
+
+      // Add category filter if provided
+      if (category) {
+        const categoryDoc = await Category.findOne({ 
+          name: category,
+          deletedAt: null 
+        });
+        if (categoryDoc) {
+          matchConditions.categoryId = categoryDoc._id;
+        }
+      }
+
+      const ratings = await YearlyRating.find(matchConditions).sort({ createdAt: -1 });
+
+      // Transform to match expected format
+      const transformedRatings = ratings.map(rating => {
+        return rating.ratingValues || [];
+      }).flat();
+
+      return transformedRatings;
+    } catch (error) {
+      console.error('Error getting ratings by parameter:', error);
       throw error;
     }
   }

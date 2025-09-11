@@ -73,9 +73,18 @@ class ParameterController {
 
       const parameters = await ParameterService.getParametersByCategoryAsync(category, req);
 
+      // Map _id to id for frontend compatibility
+      const mappedParameters = parameters.List.map(param => {
+        const paramObj = param.toObject ? param.toObject() : param;
+        return {
+          ...paramObj,
+          id: paramObj._id
+        };
+      });
+
       return res.json({
         Status: true,
-        Data: parameters.List,
+        Data: mappedParameters,
         TotalCount: parameters.Count,
         Message: "parameters Fetched!"
       });
