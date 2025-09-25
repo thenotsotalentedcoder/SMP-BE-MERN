@@ -31,10 +31,29 @@ const parameterSchema = new mongoose.Schema({
     type: Number, // Changed to Number to match .NET int
     ref: 'Cycle' 
   },
-  parameterRoles: String, // Roles that can access this parameter
-  sortOrder: { 
-    type: Number, 
-    default: 0 
+  parameterRoles: String, // Roles that can access this parameter (legacy field)
+
+  // ➕ NEW: Group-based access control
+  accessibleToGroups: [{
+    type: String,
+    enum: [
+      'Academic Departments',
+      'ORIC', 'QEC', 'CSA',
+      'Directorate of Finance', 'DIL', 'UAFA',
+      'DWS', 'ITD', 'Library', 'Medical Center',
+      'NED Academy', 'Registrar Office'
+    ],
+    default: 'Academic Departments'  // Default for backwards compatibility
+  }],
+
+  restrictedAccess: {
+    type: Boolean,
+    default: false    // false = visible to all (backwards compatible)
+  },
+
+  sortOrder: {
+    type: Number,
+    default: 0
   },
   deletedAt: {
     type: Date,
@@ -53,6 +72,11 @@ parameterSchema.index({ cycle: 1 });
 parameterSchema.index({ year: 1 });
 parameterSchema.index({ isActive: 1 });
 parameterSchema.index({ sortOrder: 1 });
+
+// ➕ NEW: Indexes for group access control
+parameterSchema.index({ accessibleToGroups: 1 });
+parameterSchema.index({ restrictedAccess: 1 });
+parameterSchema.index({ accessibleToGroups: 1, restrictedAccess: 1 }); // Compound index for filtering
 
 // Query helper for active parameters
 parameterSchema.query.active = function() {

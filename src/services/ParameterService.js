@@ -2,6 +2,7 @@ const Parameter = require('../models/Parameter');
 const Cycle = require('../models/Cycle');
 const Counter = require('../models/Counter');
 const HelperService = require('./HelperService');
+const UserGroupService = require('./UserGroupService'); // ➕ NEW: Import UserGroupService
 
 class ParameterService {
   // Get parameters with pagination and search (exact replica)
@@ -143,6 +144,9 @@ class ParameterService {
         category: parameterData.Category || parameterData.category,
         cycle: parameterData.Cycle || parameterData.cycle,
         parameterRoles: parameterData.ParameterRoles || parameterData.parameterRoles || '',
+        // ➕ NEW: Handle group access fields
+        accessibleToGroups: parameterData.accessibleToGroups || ['Academic Departments'],
+        restrictedAccess: parameterData.restrictedAccess !== undefined ? parameterData.restrictedAccess : true,
         sortOrder: parameterData.SortOrder || parameterData.sortOrder || 0
       });
 
@@ -174,7 +178,14 @@ class ParameterService {
       parameter.category = parameterData.Category || parameterData.category || parameter.category;
       parameter.cycle = parameterData.Cycle || parameterData.cycle || parameter.cycle;
       parameter.parameterRoles = parameterData.ParameterRoles || parameterData.parameterRoles || parameter.parameterRoles;
-      parameter.sortOrder = parameterData.SortOrder !== undefined ? 
+      // ➕ NEW: Handle group access fields in updates
+      if (parameterData.accessibleToGroups !== undefined) {
+        parameter.accessibleToGroups = parameterData.accessibleToGroups;
+      }
+      if (parameterData.restrictedAccess !== undefined) {
+        parameter.restrictedAccess = parameterData.restrictedAccess;
+      }
+      parameter.sortOrder = parameterData.SortOrder !== undefined ?
         parameterData.SortOrder : (parameterData.sortOrder !== undefined ? parameterData.sortOrder : parameter.sortOrder);
       parameter.updatedAt = new Date();
 
@@ -212,7 +223,7 @@ class ParameterService {
     try {
       // Generate auto-increment ID
       const cycleId = await Counter.getNextSequence('cycle');
-      
+
       const newCycle = new Cycle({
         _id: cycleId,
         name: cycleData.Name || cycleData.name,
@@ -224,6 +235,80 @@ class ParameterService {
       return savedCycle;
     } catch (error) {
       console.error('Error creating cycle:', error);
+      throw error;
+    }
+  }
+
+  // ➕ NEW: Get parameters filtered by user's group access
+  async getParametersForUserAsync(user, page = 1, pageSize = 10, search = null) {
+    try {
+      const skip = (page - 1) * pageSize;
+
+      // Build base query
+      let query = { deletedAt: null, isActive: true };
+
+      if (search && search.trim()) {
+        query.$or = [
+          { parameterName: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+          { category: { $regex: search, $options: 'i' } }
+        ];
+      }
+
+      // Get all parameters matching base criteria
+      const allParameters = await Parameter.find(query)
+        .populate('cycle')
+        .sort({ sortOrder: 1, parameterName: 1 });
+
+      // Filter by user's group access
+      const filteredParameters = UserGroupService.filterParametersForUser(allParameters, user);
+
+      // Apply pagination to filtered results
+      const totalCount = filteredParameters.length;
+      const paginatedParameters = filteredParameters.slice(skip, skip + pageSize);
+
+      return {
+        List: paginatedParameters,
+        Count: totalCount
+      };
+    } catch (error) {
+      console.error('Error getting parameters for user:', error);
+      throw error;
+    }
+  }
+
+  // ➕ NEW: Get parameters by category filtered by user's group access
+  async getParametersByCategoryForUserAsync(category, user) {
+    try {
+      let query = {
+        category: category,
+        deletedAt: null,
+        isActive: true
+      };
+
+      const allParameters = await Parameter.find(query)
+        .populate('cycle')
+        .sort({ sortOrder: 1, parameterName: 1 });
+
+      // Filter by user's group access
+      const filteredParameters = UserGroupService.filterParametersForUser(allParameters, user);
+
+      return {
+        List: filteredParameters,
+        Count: filteredParameters.length
+      };
+    } catch (error) {
+      console.error('Error getting parameters by category for user:', error);
+      throw error;
+    }
+  }
+
+  // ➕ NEW: Get available user groups for dropdown
+  async getAvailableUserGroups() {
+    try {
+      return UserGroupService.getAvailableGroups();
+    } catch (error) {
+      console.error('Error getting available user groups:', error);
       throw error;
     }
   }

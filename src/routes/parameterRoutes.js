@@ -7,6 +7,12 @@ const { authenticateToken } = require('../middleware/auth');
 router.get('/', authenticateToken, ParameterController.getParameters);
 router.get('/cycles', authenticateToken, ParameterController.getCycles);
 router.get('/by-category', authenticateToken, ParameterController.getParametersByCategory);
+
+// ➕ NEW: Group access control routes
+router.get('/user-groups', authenticateToken, ParameterController.getUserGroups);
+router.get('/accessible', authenticateToken, ParameterController.getAccessibleParameters);
+router.get('/by-category/accessible', authenticateToken, ParameterController.getAccessibleParametersByCategory);
+
 router.get('/:id', authenticateToken, ParameterController.getParameter);
 router.post('/', authenticateToken, ParameterController.createParameter);
 router.put('/:id', authenticateToken, ParameterController.updateParameter);
