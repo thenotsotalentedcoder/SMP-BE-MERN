@@ -126,6 +126,51 @@ class YearlyRatingController {
       });
     }
   }
+
+  // ➕ NEW: POST /api/yearly-rating/submit-parameter - Submit individual parameter
+  async submitIndividualParameter(req, res) {
+    try {
+      const { parameterId, cycle, values } = req.body;
+      const user = req.user; // From authentication middleware
+
+      if (!parameterId || !cycle || !values) {
+        return res.status(400).json({
+          Status: false,
+          Message: "Parameter ID, cycle, and values are required"
+        });
+      }
+
+      if (!user) {
+        return res.status(401).json({
+          Status: false,
+          Message: "User authentication required"
+        });
+      }
+
+      console.log(`📝 Submitting individual parameter: ${parameterId}, cycle: ${cycle}, user: ${user.userName}`);
+
+      // Submit individual parameter for specific cycle
+      const submission = await RatingService.submitIndividualParameter(
+        parameterId,
+        cycle,
+        values,
+        user
+      );
+
+      return res.json({
+        Status: true,
+        Data: submission,
+        Message: "Parameter submitted successfully!"
+      });
+
+    } catch (error) {
+      console.error('Submit individual parameter error:', error);
+      return res.status(500).json({
+        Status: false,
+        Message: `Internal server error: ${error.message}`
+      });
+    }
+  }
 }
 
 module.exports = new YearlyRatingController();

@@ -312,6 +312,121 @@ class ParameterService {
       throw error;
     }
   }
+
+  // ➕ NEW: Get parameter list for category (minimal data for list view)
+  async getParameterListByCategory(categoryName, user) {
+    try {
+      let query = {
+        category: categoryName,
+        deletedAt: null
+      };
+
+      // Apply group access control (reuse existing logic from UserGroupService)
+      if (!UserGroupService.isAdmin(user)) {
+        const userGroup = UserGroupService.getUserGroup(user);
+        console.log(`🔐 Applying group access control for user group: ${userGroup}`);
+
+        query.$or = [
+          { restrictedAccess: false },
+          { restrictedAccess: { $exists: false } }, // Legacy parameters without access control
+          { accessibleToGroups: { $in: [userGroup] } }
+        ];
+      } else {
+        console.log(`👑 Admin user - no access control applied`);
+      }
+
+      // Get only essential fields for list view (performance optimization)
+      const parameters = await Parameter.find(query, {
+        _id: 1,
+        parameterName: 1,
+        parameterType: 1,
+        description: 1
+      }).sort({ sortOrder: 1 });
+
+      console.log(`📋 Found ${parameters.length} parameters for category: ${categoryName}`);
+
+      // Map to consistent format
+      return parameters.map(param => ({
+        id: param._id,
+        name: param.parameterName,
+        parameterType: param.parameterType,
+        description: param.description || ''
+      }));
+
+    } catch (error) {
+      console.error('Error getting parameter list by category:', error);
+      throw error;
+    }
+  }
+
+  // ➕ NEW: Get complete parameter details for expansion
+  async getParameterDetails(parameterId, userId) {
+    try {
+      console.log(`📊 Getting parameter details for ID: ${parameterId}, User: ${userId}`);
+
+      // Get complete parameter data
+      const parameter = await Parameter.findOne({
+        _id: parameterId,
+        deletedAt: null
+      }).populate('cycle');
+
+      if (!parameter) {
+        throw new Error('Parameter not found');
+      }
+
+      // Get cycle information (for now, hardcoded - will be dynamic with cycle management)
+      const cycles = [
+        { year: 2024, enabled: true, isTarget: false },
+        { year: 2025, enabled: false, isTarget: false },
+        { year: 2026, enabled: false, isTarget: false },
+        { year: 2027, enabled: false, isTarget: false },
+        { year: 2028, enabled: false, isTarget: false },
+        { year: 2029, enabled: true, isTarget: true }
+      ];
+
+      // Get submitted values for this parameter and user
+      const submittedValues = await YearlyRating.find({
+        parameterId: parameterId,
+        userId: userId,
+        deletedAt: null
+      });
+
+      console.log(`📈 Found ${submittedValues.length} submitted values for parameter ${parameterId}`);
+
+      // Map submitted values by cycle year
+      const submittedValuesMap = {};
+      submittedValues.forEach(submission => {
+        if (submission.ratingValues && submission.ratingValues.length > 0) {
+          submission.ratingValues.forEach(value => {
+            submittedValuesMap[value.year] = {
+              actualValue: value.actualValue,
+              projectedValue: value.projectedValue,
+              textValue: value.textValue,
+              submittedAt: submission.createdAt,
+              isReadOnly: true
+            };
+          });
+        }
+      });
+
+      return {
+        parameter: {
+          id: parameter._id,
+          name: parameter.parameterName,
+          parameterType: parameter.parameterType,
+          description: parameter.description,
+          maxValue: parameter.maxValue || 100,
+          category: parameter.category
+        },
+        cycles: cycles,
+        submittedValues: submittedValuesMap
+      };
+
+    } catch (error) {
+      console.error('Error getting parameter details:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new ParameterService();

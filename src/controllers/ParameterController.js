@@ -318,6 +318,86 @@ class ParameterController {
       });
     }
   }
+
+  // ➕ NEW: GET /api/parameters/by-category/:categoryName/list - Get parameter list for new UI workflow
+  async getParameterListByCategory(req, res) {
+    try {
+      const { categoryName } = req.params;
+      const user = req.user; // From authentication middleware
+
+      if (!categoryName) {
+        return res.status(400).json({
+          Status: false,
+          Message: "Category name is required"
+        });
+      }
+
+      if (!user) {
+        return res.status(401).json({
+          Status: false,
+          Message: "User authentication required"
+        });
+      }
+
+      console.log(`🔍 Getting parameter list for category: ${categoryName}, user: ${user.userName}`);
+
+      // Get parameter list (minimal data for list view)
+      const parameterList = await ParameterService.getParameterListByCategory(categoryName, user);
+
+      return res.json({
+        Status: true,
+        Data: parameterList,
+        Message: "Parameter list retrieved successfully"
+      });
+
+    } catch (error) {
+      console.error('Get parameter list by category error:', error);
+      return res.status(500).json({
+        Status: false,
+        Message: `Internal server error: ${error.message}`
+      });
+    }
+  }
+
+  // ➕ NEW: GET /api/parameters/:id/details - Get complete parameter details for expansion
+  async getParameterDetails(req, res) {
+    try {
+      const { id } = req.params;
+      const user = req.user; // From authentication middleware
+
+      if (!id) {
+        return res.status(400).json({
+          Status: false,
+          Message: "Parameter ID is required"
+        });
+      }
+
+      if (!user) {
+        return res.status(401).json({
+          Status: false,
+          Message: "User authentication required"
+        });
+      }
+
+      console.log(`📊 Getting parameter details for ID: ${id}, user: ${user.userName}`);
+
+      // Get complete parameter details including cycles and submitted values
+      const parameterDetails = await ParameterService.getParameterDetails(id, user.id);
+
+      return res.json({
+        Status: true,
+        Data: parameterDetails,
+        Message: "Parameter details retrieved successfully"
+      });
+
+    } catch (error) {
+      console.error('Get parameter details error:', error);
+      return res.status(500).json({
+        Status: false,
+        Message: `Internal server error: ${error.message}`
+      });
+    }
+  }
 }
 
 module.exports = new ParameterController();

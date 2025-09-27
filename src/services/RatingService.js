@@ -405,6 +405,97 @@ class RatingService {
       throw error;
     }
   }
+
+  // ➕ NEW: Submit individual parameter for specific cycle
+  async submitIndividualParameter(parameterId, cycle, values, user) {
+    try {
+      console.log(`📝 Submitting individual parameter: ${parameterId} for cycle ${cycle}`);
+
+      // Get parameter details for validation
+      const parameter = await Parameter.findOne({
+        _id: parameterId,
+        deletedAt: null
+      });
+
+      if (!parameter) {
+        throw new Error('Parameter not found');
+      }
+
+      // Check if user already has a submission for this parameter and cycle
+      let existingRating = await YearlyRating.findOne({
+        parameterId: parameterId,
+        userId: user.id,
+        deletedAt: null,
+        'ratingValues.year': cycle
+      });
+
+      if (existingRating) {
+        // Update existing submission
+        console.log(`📝 Updating existing submission for parameter ${parameterId}, cycle ${cycle}`);
+
+        const ratingValueIndex = existingRating.ratingValues.findIndex(rv => rv.year === cycle);
+        if (ratingValueIndex !== -1) {
+          existingRating.ratingValues[ratingValueIndex] = {
+            year: cycle,
+            actualValue: values.actualValue || null,
+            projectedValue: values.projectedValue || null,
+            textValue: values.textValue || null
+          };
+        } else {
+          existingRating.ratingValues.push({
+            year: cycle,
+            actualValue: values.actualValue || null,
+            projectedValue: values.projectedValue || null,
+            textValue: values.textValue || null
+          });
+        }
+
+        const updatedRating = await existingRating.save();
+
+        return {
+          submissionId: updatedRating._id,
+          parameterId: parameterId,
+          cycle: cycle,
+          submittedAt: updatedRating.updatedAt,
+          isReadOnly: true,
+          action: 'updated'
+        };
+
+      } else {
+        // Create new submission
+        console.log(`📝 Creating new submission for parameter ${parameterId}, cycle ${cycle}`);
+
+        const newRating = new YearlyRating({
+          ratingYear: cycle,
+          userId: user.id,
+          parameterName: parameter.parameterName,
+          parameterId: parameterId,
+          categoryId: 1, // Default category ID - will be enhanced later
+          ratingValues: [{
+            year: cycle,
+            actualValue: values.actualValue || null,
+            projectedValue: values.projectedValue || null,
+            textValue: values.textValue || null
+          }]
+        });
+
+        const savedRating = await newRating.save();
+
+        return {
+          submissionId: savedRating._id,
+          parameterId: parameterId,
+          cycle: cycle,
+          submittedAt: savedRating.createdAt,
+          isReadOnly: true,
+          action: 'created'
+        };
+      }
+
+    } catch (error) {
+      console.error('Error submitting individual parameter:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new RatingService();

@@ -13,7 +13,11 @@ router.get('/user-groups', authenticateToken, ParameterController.getUserGroups)
 router.get('/accessible', authenticateToken, ParameterController.getAccessibleParameters);
 router.get('/by-category/accessible', authenticateToken, ParameterController.getAccessibleParametersByCategory);
 
+// ➕ NEW: Parameter list view routes (must come before /:id to avoid route conflicts)
+router.get('/by-category/:categoryName/list', authenticateToken, ParameterController.getParameterListByCategory);
+
 router.get('/:id', authenticateToken, ParameterController.getParameter);
+router.get('/:id/details', authenticateToken, ParameterController.getParameterDetails);
 router.post('/', authenticateToken, ParameterController.createParameter);
 router.put('/:id', authenticateToken, ParameterController.updateParameter);
 router.delete('/:id', authenticateToken, ParameterController.deleteParameter);
