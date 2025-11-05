@@ -2,6 +2,7 @@ const YearlyRating = require('../models/YearlyRating');
 const Category = require('../models/Category');
 const User = require('../models/User');
 const Department = require('../models/Department');
+const Parameter = require('../models/Parameter');
 const HelperService = require('./HelperService');
 
 class RatingService {
@@ -294,40 +295,49 @@ class RatingService {
     }
   }
 
-  // Get ratings by department (exact replica with faculty filtering)
-  async getRatingsByDepartment(deptID, context) {
+  // Get ratings by department (enhanced with cycle and category filtering)
+  async getRatingsByDepartment(deptID, cycleId = null, categoryId = null, context) {
     try {
       const currentUser = await HelperService.getLoggedUser(context);
       if (!currentUser) {
         throw new Error('User not found or not logged in');
       }
 
+      console.log(`📊 getRatingsByDepartment - deptID: ${deptID}, cycleId: ${cycleId}, categoryId: ${categoryId}`);
+
       const currentFacultyId = currentUser.facultyId;
+      const isAdmin = currentUser.userRole === 'Admin';
 
       // Build aggregation pipeline to join data (similar to .NET LINQ joins)
       let matchStage = {
         deletedAt: null
       };
 
-      // Filter by department if provided
+      // Filter by department if provided (0 = all departments)
       if (deptID && deptID !== 0) {
         matchStage.deptId = deptID;
       }
 
-      // Filter by faculty if user has facultyId
-      if (currentFacultyId) {
+      // Non-admin users see only their faculty (admin sees all)
+      if (!isAdmin && currentFacultyId) {
         matchStage.facultyId = currentFacultyId;
       }
 
       // Aggregate ratings with user and department information
-      const ratings = await YearlyRating.aggregate([
+      let ratings = await YearlyRating.aggregate([
         {
           $match: { deletedAt: null }
+        },
+        // Add field to convert userId string to number for lookup
+        {
+          $addFields: {
+            userIdNumeric: { $toInt: '$userId' }
+          }
         },
         {
           $lookup: {
             from: 'Users',
-            localField: 'userId',
+            localField: 'userIdNumeric',
             foreignField: '_id',
             as: 'user'
           }
@@ -354,7 +364,7 @@ class RatingService {
           }
         },
         {
-          $unwind: '$department'
+          $unwind: { path: '$department', preserveNullAndEmptyArrays: true }
         },
         {
           $lookup: {
@@ -365,22 +375,27 @@ class RatingService {
           }
         },
         {
-          $unwind: '$category'
+          $unwind: { path: '$category', preserveNullAndEmptyArrays: true }
         },
-        {
-          $match: {
-            'category.deletedAt': null,
-            'department.deletedAt': null
-          }
-        },
+        // 🆕 Filter by category if provided
+        ...(categoryId && categoryId !== 0 ? [{
+          $match: { 'category._id': categoryId }
+        }] : []),
         {
           $project: {
             parameterName: 1,
-            categoryName: '$category.name',
+            categoryId: { $ifNull: ['$category._id', null] },
+            categoryName: { $ifNull: ['$category.name', 'Unknown Category'] },
             userName: {
-              $concat: ['$user.firstName', ' ', '$user.lastName']
+              $concat: [
+                { $ifNull: ['$user.firstName', ''] },
+                ' ',
+                { $ifNull: ['$user.lastName', ''] }
+              ]
             },
-            departmentName: '$department.deptName',
+            userEmail: '$user.email',
+            departmentId: { $ifNull: ['$department._id', null] },
+            departmentName: { $ifNull: ['$department.deptName', 'No Department'] },
             yearlyValues: {
               $map: {
                 input: {
@@ -394,12 +409,79 @@ class RatingService {
                   textValue: '$$rv.textValue'
                 }
               }
-            }
+            },
+            createdAt: 1,
+            updatedAt: 1
           }
         }
       ]);
 
-      return ratings;
+      // 🆕 Filter by cycle years if cycleId is provided
+      if (cycleId && cycleId !== 0) {
+        const Cycle = require('../models/Cycle');
+        const cycle = await Cycle.findOne({ _id: cycleId, deletedAt: null });
+
+        if (cycle) {
+          console.log(`📅 Filtering by cycle years: ${cycle.activatedYears} + targetYear: ${cycle.targetYear}`);
+
+          // Get all relevant years for this cycle (activated years + target year)
+          const cycleYears = [...(cycle.activatedYears || [])];
+          if (cycle.targetYear && !cycleYears.includes(cycle.targetYear)) {
+            cycleYears.push(cycle.targetYear);
+          }
+
+          // Filter each rating's yearlyValues to include only this cycle's years
+          ratings = ratings.map(rating => ({
+            ...rating,
+            yearlyValues: rating.yearlyValues.filter(yv => cycleYears.includes(yv.year))
+          })).filter(rating => rating.yearlyValues.length > 0); // Remove ratings with no matching years
+        }
+      }
+
+      // 🆕 GROUP BY: user + parameter to consolidate multiple year submissions
+      // Instead of showing each year as separate row, group them together
+      const groupedRatings = {};
+
+      ratings.forEach(rating => {
+        // Create unique key: userId + parameterId + departmentId + categoryId
+        const key = `${rating.userEmail}_${rating.parameterName}_${rating.departmentId}_${rating.categoryId}`;
+
+        if (!groupedRatings[key]) {
+          // First time seeing this combination - create new entry
+          groupedRatings[key] = {
+            parameterName: rating.parameterName,
+            categoryId: rating.categoryId,
+            categoryName: rating.categoryName,
+            userName: rating.userName,
+            userEmail: rating.userEmail,
+            departmentId: rating.departmentId,
+            departmentName: rating.departmentName,
+            yearlyValues: [...rating.yearlyValues],
+            createdAt: rating.createdAt,
+            updatedAt: rating.updatedAt
+          };
+        } else {
+          // Already have this user+parameter combo - merge yearlyValues
+          groupedRatings[key].yearlyValues.push(...rating.yearlyValues);
+
+          // Update timestamps to most recent
+          if (new Date(rating.updatedAt) > new Date(groupedRatings[key].updatedAt)) {
+            groupedRatings[key].updatedAt = rating.updatedAt;
+          }
+          if (new Date(rating.createdAt) < new Date(groupedRatings[key].createdAt)) {
+            groupedRatings[key].createdAt = rating.createdAt;
+          }
+        }
+      });
+
+      // Convert back to array and sort yearlyValues by year
+      const consolidatedRatings = Object.values(groupedRatings).map(rating => ({
+        ...rating,
+        yearlyValues: rating.yearlyValues.sort((a, b) => a.year - b.year)
+      }));
+
+      console.log(`✅ Found ${ratings.length} individual submissions, consolidated to ${consolidatedRatings.length} grouped entries`);
+      return consolidatedRatings;
     } catch (error) {
       console.error('Error getting ratings by department:', error);
       throw error;
@@ -421,6 +503,22 @@ class RatingService {
         throw new Error('Parameter not found');
       }
 
+      // Get the category ID for this parameter
+      let categoryId = 1; // Default fallback
+      if (parameter.category) {
+        // Parameter stores category name, need to look up ID
+        const category = await Category.findOne({
+          name: parameter.category,
+          deletedAt: null
+        });
+        if (category) {
+          categoryId = category._id;
+          console.log(`✅ Found category ID ${categoryId} for "${parameter.category}"`);
+        } else {
+          console.warn(`⚠️  Category "${parameter.category}" not found, using default ID 1`);
+        }
+      }
+
       // Check if user already has a submission for this parameter and cycle
       let existingRating = await YearlyRating.findOne({
         parameterId: parameterId,
@@ -435,12 +533,15 @@ class RatingService {
 
         const ratingValueIndex = existingRating.ratingValues.findIndex(rv => rv.year === cycle);
         if (ratingValueIndex !== -1) {
+          // MERGE with existing values - don't overwrite fields that weren't submitted
+          const existingValue = existingRating.ratingValues[ratingValueIndex];
           existingRating.ratingValues[ratingValueIndex] = {
             year: cycle,
-            actualValue: values.actualValue || null,
-            projectedValue: values.projectedValue || null,
-            textValue: values.textValue || null
+            actualValue: values.actualValue !== undefined ? values.actualValue : existingValue.actualValue,
+            projectedValue: values.projectedValue !== undefined ? values.projectedValue : existingValue.projectedValue,
+            textValue: values.textValue !== undefined ? values.textValue : existingValue.textValue
           };
+          console.log(`🔄 Merged values - actual: ${existingRating.ratingValues[ratingValueIndex].actualValue}, projected: ${existingRating.ratingValues[ratingValueIndex].projectedValue}`);
         } else {
           existingRating.ratingValues.push({
             year: cycle,
@@ -470,7 +571,7 @@ class RatingService {
           userId: user.id,
           parameterName: parameter.parameterName,
           parameterId: parameterId,
-          categoryId: 1, // Default category ID - will be enhanced later
+          categoryId: categoryId, // Use the looked-up category ID
           ratingValues: [{
             year: cycle,
             actualValue: values.actualValue || null,

@@ -15,9 +15,9 @@ const parameterSchema = new mongoose.Schema({
     required: true 
   },
   description: String,
-  year: { 
-    type: Number, 
-    required: true 
+  year: {
+    type: Number,
+    required: false  // Optional for new year-based system, kept for legacy compatibility
   },
   isActive: { 
     type: Boolean, 

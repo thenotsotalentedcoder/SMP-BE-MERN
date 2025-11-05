@@ -104,13 +104,19 @@ class YearlyRatingController {
     }
   }
 
-  // GET /api/yearly-rating/by-department/:deptID (exact replica)
+  // GET /api/yearly-rating/by-department/:deptID (enhanced with cycle and category filters)
   async getRatingsByDepartment(req, res) {
     try {
       const { deptID } = req.params;
-      const deptId = deptID ? parseInt(deptID) : null;
+      const { cycleId, categoryId } = req.query;
 
-      const ratings = await RatingService.getRatingsByDepartment(deptId, req);
+      const deptId = deptID ? parseInt(deptID) : 0;
+      const cycle = cycleId ? parseInt(cycleId) : null;
+      const category = categoryId ? parseInt(categoryId) : null;
+
+      console.log(`📊 getRatingsByDepartment API - dept: ${deptId}, cycle: ${cycle}, category: ${category}`);
+
+      const ratings = await RatingService.getRatingsByDepartment(deptId, cycle, category, req);
 
       return res.json({
         Status: true,

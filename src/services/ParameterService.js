@@ -1,6 +1,7 @@
 const Parameter = require('../models/Parameter');
 const Cycle = require('../models/Cycle');
 const Counter = require('../models/Counter');
+const YearlyRating = require('../models/YearlyRating');
 const HelperService = require('./HelperService');
 const UserGroupService = require('./UserGroupService'); // ➕ NEW: Import UserGroupService
 
@@ -368,21 +369,67 @@ class ParameterService {
       const parameter = await Parameter.findOne({
         _id: parameterId,
         deletedAt: null
-      }).populate('cycle');
+      });
 
       if (!parameter) {
         throw new Error('Parameter not found');
       }
 
-      // Get cycle information (for now, hardcoded - will be dynamic with cycle management)
-      const cycles = [
-        { year: 2024, enabled: true, isTarget: false },
-        { year: 2025, enabled: false, isTarget: false },
-        { year: 2026, enabled: false, isTarget: false },
-        { year: 2027, enabled: false, isTarget: false },
-        { year: 2028, enabled: false, isTarget: false },
-        { year: 2029, enabled: true, isTarget: true }
-      ];
+      // 🔥 CRITICAL FIX: Always fetch the CURRENTLY ACTIVE cycle, not the stored one!
+      // This ensures forms update dynamically when admin changes cycles
+      const activeCycle = await Cycle.findOne({
+        isActive: true,
+        deletedAt: null
+      });
+
+      console.log(`📅 Using currently active cycle: ${activeCycle?.cycleName || 'None'}`);
+
+      // Get cycle information dynamically from the ACTIVE cycle
+      let cycles = [];
+
+      if (activeCycle) {
+        const cycle = activeCycle;
+
+        console.log(`📅 Parameter linked to cycle: ${cycle.cycleName}`);
+        console.log(`📅 Activated years (actual): ${cycle.activatedYears || []}`);
+        console.log(`🎯 Target year: ${cycle.targetYear || 'None'}`);
+        console.log(`🎯 Target projections enabled: ${cycle.targetYearSettings?.projectionSubmissionsEnabled || false}`);
+
+        // Build cycles array from activatedYears (for ACTUAL value submissions)
+        if (cycle.activatedYears && cycle.activatedYears.length > 0) {
+          cycles = cycle.activatedYears.map(year => ({
+            year: year,
+            enabled: true,
+            isTarget: false  // These are for actual values, NOT target projections
+          }));
+        } else {
+          // Fallback: if no activatedYears, show all cycle years as disabled
+          console.warn(`⚠️ No activated years found for cycle ${cycle.cycleName}`);
+          if (cycle.cycleYears && cycle.cycleYears.length > 0) {
+            cycles = cycle.cycleYears.map(year => ({
+              year: year,
+              enabled: false,
+              isTarget: false
+            }));
+          }
+        }
+
+        // Add target year SEPARATELY for projected value submissions (if enabled)
+        const targetProjectionsEnabled = cycle.targetYearSettings?.hasProjectedSubmission || false;
+
+        console.log(`🎯 Target projections enabled: ${targetProjectionsEnabled}`);
+
+        if (cycle.targetYear && targetProjectionsEnabled) {
+          cycles.push({
+            year: cycle.targetYear,
+            enabled: true,
+            isTarget: true  // This is specifically for projected/target values
+          });
+          console.log(`✅ Added target year ${cycle.targetYear} for projected submissions`);
+        }
+      } else {
+        console.warn(`⚠️ Parameter ${parameterId} has no associated cycle`);
+      }
 
       // Get submitted values for this parameter and user
       const submittedValues = await YearlyRating.find({
@@ -408,6 +455,8 @@ class ParameterService {
           });
         }
       });
+
+      console.log(`✅ Returning ${cycles.length} cycles for parameter ${parameterId}`);
 
       return {
         parameter: {

@@ -112,8 +112,13 @@ class AuthenticationController {
       // Hash password
       const passwordHash = await bcrypt.hash(Password, 10);
 
+      // Generate next available numeric ID
+      const lastNumericUser = await User.findOne({ _id: { $type: "number" } }).sort({ _id: -1 }).lean();
+      const nextId = lastNumericUser ? lastNumericUser._id + 1 : 1000; // Start from 1000 to avoid conflicts
+
       // Create new user
       const newUser = new User({
+        _id: nextId,
         userName: Username,
         email: Email,
         passwordHash: passwordHash,
