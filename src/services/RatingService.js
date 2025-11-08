@@ -315,12 +315,12 @@ class RatingService {
 
       // Filter by department if provided (0 = all departments)
       if (deptID && deptID !== 0) {
-        matchStage.deptId = deptID;
+        matchStage['user.deptId'] = deptID;
       }
 
       // Non-admin users see only their faculty (admin sees all)
       if (!isAdmin && currentFacultyId) {
-        matchStage.facultyId = currentFacultyId;
+        matchStage['user.facultyId'] = currentFacultyId;
       }
 
       // Aggregate ratings with user and department information
