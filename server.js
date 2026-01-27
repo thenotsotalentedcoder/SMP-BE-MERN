@@ -7,7 +7,7 @@ const connectDB = require('./src/config/database');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB Atlas
+// Connect to MongoDB
 connectDB();
 
 // Middleware
