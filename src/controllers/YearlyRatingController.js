@@ -177,6 +177,43 @@ class YearlyRatingController {
       });
     }
   }
+  // POST /api/yearly-rating/submit-targets - Submit target values for all cycle years
+  async submitTargetValues(req, res) {
+    try {
+      const { parameterId, targetValues, overallTarget } = req.body;
+      const user = req.user;
+
+      if (!parameterId || !targetValues || !Array.isArray(targetValues) || targetValues.length === 0) {
+        return res.status(400).json({
+          Status: false,
+          Message: "Parameter ID and targetValues array are required"
+        });
+      }
+
+      if (!user) {
+        return res.status(401).json({
+          Status: false,
+          Message: "User authentication required"
+        });
+      }
+
+      const result = await RatingService.submitTargetValues(parameterId, targetValues, overallTarget, user);
+
+      return res.json({
+        Status: true,
+        Data: result,
+        Message: "Target values submitted and locked successfully!"
+      });
+
+    } catch (error) {
+      console.error('Submit target values error:', error);
+      const statusCode = error.message.includes('already been submitted') ? 409 : 500;
+      return res.status(statusCode).json({
+        Status: false,
+        Message: error.message || 'Internal server error'
+      });
+    }
+  }
 }
 
 module.exports = new YearlyRatingController();

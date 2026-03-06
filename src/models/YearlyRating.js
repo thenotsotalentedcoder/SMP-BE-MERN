@@ -32,6 +32,14 @@ const yearlyRatingSchema = new mongoose.Schema({
     type: Number, // Number to match Category integer ID
     required: true 
   },
+  overallTarget: {
+    type: Number,
+    default: null // The cumulative target for the last year of the cycle
+  },
+  targetValuesLocked: {
+    type: Boolean,
+    default: false // True once strategic target values are submitted for all cycle years
+  },
   deletedAt: {
     type: Date,
     default: null // Soft delete pattern

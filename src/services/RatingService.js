@@ -488,12 +488,23 @@ class RatingService {
     }
   }
 
-  // ➕ NEW: Submit individual parameter for specific cycle
+  // Submit individual parameter for specific cycle (actual values)
   async submitIndividualParameter(parameterId, cycle, values, user) {
     try {
       console.log(`📝 Submitting individual parameter: ${parameterId} for cycle ${cycle}`);
 
-      // Get parameter details for validation
+      // Guard: check that target values have been submitted first
+      const targetCheck = await YearlyRating.findOne({
+        parameterId: parameterId,
+        userId: user.id,
+        deletedAt: null,
+        targetValuesLocked: true
+      });
+
+      if (!targetCheck) {
+        throw new Error('Please submit target values for all years first before submitting actual values');
+      }
+
       const parameter = await Parameter.findOne({
         _id: parameterId,
         deletedAt: null
@@ -503,29 +514,35 @@ class RatingService {
         throw new Error('Parameter not found');
       }
 
-      // Get the category ID for this parameter
-      let categoryId = 1; // Default fallback
+      let categoryId = 1;
       if (parameter.category) {
-        // Parameter stores category name, need to look up ID
         const category = await Category.findOne({
           name: parameter.category,
           deletedAt: null
         });
         if (category) {
           categoryId = category._id;
-          console.log(`✅ Found category ID ${categoryId} for "${parameter.category}"`);
-        } else {
-          console.warn(`⚠️  Category "${parameter.category}" not found, using default ID 1`);
         }
       }
 
-      // Check if user already has a submission for this parameter and cycle
+      // Prefer the locked (consolidated) document for actual value submissions
       let existingRating = await YearlyRating.findOne({
         parameterId: parameterId,
         userId: user.id,
         deletedAt: null,
+        targetValuesLocked: true,
         'ratingValues.year': cycle
       });
+
+      // Fall back to any document with this year
+      if (!existingRating) {
+        existingRating = await YearlyRating.findOne({
+          parameterId: parameterId,
+          userId: user.id,
+          deletedAt: null,
+          'ratingValues.year': cycle
+        });
+      }
 
       if (existingRating) {
         // Update existing submission
@@ -594,6 +611,181 @@ class RatingService {
 
     } catch (error) {
       console.error('Error submitting individual parameter:', error);
+      throw error;
+    }
+  }
+  // Submit target values for ALL years in a cycle (strict batch, immutable once saved)
+  async submitTargetValues(parameterId, targetValues, overallTarget, user) {
+    try {
+      console.log(`🎯 Submitting target values for parameter ${parameterId}, user ${user.id}, overallTarget: ${overallTarget}`);
+
+      const parameter = await Parameter.findOne({
+        _id: parameterId,
+        deletedAt: null
+      });
+
+      if (!parameter) {
+        throw new Error('Parameter not found');
+      }
+
+      const isTextType = parameter.parameterType === 'Text';
+
+      // Get the active cycle to validate all years are present
+      const Cycle = require('../models/Cycle');
+      const activeCycle = await Cycle.findOne({ isActive: true, deletedAt: null });
+
+      if (!activeCycle) {
+        throw new Error('No active cycle found');
+      }
+
+      const allCycleYears = activeCycle.cycleYears || [];
+      if (allCycleYears.length === 0) {
+        throw new Error('Active cycle has no years defined');
+      }
+
+      // Validate that target values are provided for ALL cycle years
+      const providedYears = targetValues.map(tv => tv.year);
+      const missingYears = allCycleYears.filter(y => !providedYears.includes(y));
+      if (missingYears.length > 0) {
+        throw new Error(`Target values missing for years: ${missingYears.join(', ')}`);
+      }
+
+      // Validate overallTarget for numeric parameters
+      if (!isTextType) {
+        if (overallTarget === undefined || overallTarget === null) {
+          throw new Error('Overall target value is required');
+        }
+
+        const numericOverall = Number(overallTarget);
+        if (isNaN(numericOverall) || numericOverall < 0) {
+          throw new Error('Overall target must be a valid non-negative number');
+        }
+
+        if (parameter.maxValue && numericOverall > parameter.maxValue) {
+          throw new Error(`Overall target cannot exceed the maximum value of ${parameter.maxValue}`);
+        }
+
+        // Validate that sum of all yearly targets exactly equals overallTarget
+        const yearlySum = targetValues.reduce((sum, tv) => sum + Number(tv.value), 0);
+        if (yearlySum !== numericOverall) {
+          throw new Error(`Sum of yearly targets (${yearlySum}) must exactly equal the overall target (${numericOverall})`);
+        }
+      }
+
+      // Check if targets are already locked
+      const existingRating = await YearlyRating.findOne({
+        parameterId: parameterId,
+        userId: user.id,
+        deletedAt: null,
+        targetValuesLocked: true
+      });
+
+      if (existingRating) {
+        throw new Error('Target values have already been submitted and cannot be changed');
+      }
+
+      // Look up category ID
+      let categoryId = 1;
+      if (parameter.category) {
+        const category = await Category.findOne({
+          name: parameter.category,
+          deletedAt: null
+        });
+        if (category) {
+          categoryId = category._id;
+        }
+      }
+
+      // CONSOLIDATION: Find ALL existing YearlyRating documents for this parameter+user
+      const allExistingRatings = await YearlyRating.find({
+        parameterId: parameterId,
+        userId: user.id,
+        deletedAt: null
+      });
+
+      console.log(`📦 Found ${allExistingRatings.length} existing rating document(s) to consolidate`);
+
+      // Collect all existing actual values from ALL documents (preserve user's submitted actuals)
+      const existingActuals = {};
+      for (const doc of allExistingRatings) {
+        if (doc.ratingValues && doc.ratingValues.length > 0) {
+          for (const rv of doc.ratingValues) {
+            if (rv.actualValue !== undefined && rv.actualValue !== null) {
+              existingActuals[rv.year] = {
+                actualValue: rv.actualValue,
+                textValue: rv.textValue || null
+              };
+            }
+            if (!existingActuals[rv.year] && rv.textValue && isTextType) {
+              existingActuals[rv.year] = {
+                actualValue: null,
+                textValue: rv.textValue
+              };
+            }
+          }
+        }
+      }
+
+      console.log(`📋 Preserved actual values for years: ${Object.keys(existingActuals).join(', ') || 'none'}`);
+
+      // Build the consolidated ratingValues array with new targets + preserved actuals
+      const consolidatedRatingValues = targetValues.map(tv => {
+        const existing = existingActuals[tv.year];
+        const entry = {
+          year: tv.year,
+          actualValue: existing ? existing.actualValue : null,
+          projectedValue: null,
+          textValue: null
+        };
+        if (isTextType) {
+          entry.textValue = tv.value;
+        } else {
+          entry.projectedValue = tv.value;
+        }
+        return entry;
+      });
+
+      // Use the first existing document as the primary, or create new
+      let rating;
+      if (allExistingRatings.length > 0) {
+        rating = allExistingRatings[0];
+        rating.ratingValues = consolidatedRatingValues;
+        rating.overallTarget = isTextType ? null : Number(overallTarget);
+        rating.targetValuesLocked = true;
+        await rating.save();
+
+        // Soft-delete all other duplicate documents
+        for (let i = 1; i < allExistingRatings.length; i++) {
+          console.log(`🗑️ Soft-deleting duplicate rating document: ${allExistingRatings[i]._id}`);
+          allExistingRatings[i].deletedAt = new Date();
+          await allExistingRatings[i].save();
+        }
+      } else {
+        rating = new YearlyRating({
+          ratingYear: allCycleYears[0],
+          userId: user.id,
+          parameterName: parameter.parameterName,
+          parameterId: parameterId,
+          categoryId: categoryId,
+          ratingValues: consolidatedRatingValues,
+          overallTarget: isTextType ? null : Number(overallTarget),
+          targetValuesLocked: true
+        });
+        await rating.save();
+      }
+
+      console.log(`✅ Target values locked for parameter ${parameterId}, user ${user.id}, overallTarget: ${overallTarget}`);
+
+      return {
+        parameterId: parameterId,
+        targetValuesLocked: true,
+        overallTarget: isTextType ? null : Number(overallTarget),
+        yearsSubmitted: allCycleYears.length,
+        submittedAt: rating.updatedAt || rating.createdAt
+      };
+
+    } catch (error) {
+      console.error('Error submitting target values:', error);
       throw error;
     }
   }

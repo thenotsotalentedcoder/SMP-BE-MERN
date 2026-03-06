@@ -360,12 +360,11 @@ class ParameterService {
     }
   }
 
-  // ➕ NEW: Get complete parameter details for expansion
+  // Get complete parameter details for expansion (with target values support)
   async getParameterDetails(parameterId, userId) {
     try {
       console.log(`📊 Getting parameter details for ID: ${parameterId}, User: ${userId}`);
 
-      // Get complete parameter data
       const parameter = await Parameter.findOne({
         _id: parameterId,
         deletedAt: null
@@ -375,8 +374,7 @@ class ParameterService {
         throw new Error('Parameter not found');
       }
 
-      // 🔥 CRITICAL FIX: Always fetch the CURRENTLY ACTIVE cycle, not the stored one!
-      // This ensures forms update dynamically when admin changes cycles
+      // Always fetch the CURRENTLY ACTIVE cycle
       const activeCycle = await Cycle.findOne({
         isActive: true,
         deletedAt: null
@@ -384,79 +382,112 @@ class ParameterService {
 
       console.log(`📅 Using currently active cycle: ${activeCycle?.cycleName || 'None'}`);
 
-      // Get cycle information dynamically from the ACTIVE cycle
       let cycles = [];
+      let allCycleYears = [];
 
       if (activeCycle) {
         const cycle = activeCycle;
 
-        console.log(`📅 Parameter linked to cycle: ${cycle.cycleName}`);
-        console.log(`📅 Activated years (actual): ${cycle.activatedYears || []}`);
-        console.log(`🎯 Target year: ${cycle.targetYear || 'None'}`);
-        console.log(`🎯 Target projections enabled: ${cycle.targetYearSettings?.projectionSubmissionsEnabled || false}`);
+        // All years in the cycle (for target value collection)
+        allCycleYears = cycle.cycleYears || [];
 
-        // Build cycles array from activatedYears (for ACTUAL value submissions)
+        console.log(`📅 All cycle years: ${allCycleYears}`);
+        console.log(`📅 Activated years (actual): ${cycle.activatedYears || []}`);
+
+        // Build cycles array from activatedYears (for ACTUAL value submissions only)
         if (cycle.activatedYears && cycle.activatedYears.length > 0) {
           cycles = cycle.activatedYears.map(year => ({
             year: year,
             enabled: true,
-            isTarget: false  // These are for actual values, NOT target projections
+            isTarget: false
           }));
         } else {
-          // Fallback: if no activatedYears, show all cycle years as disabled
           console.warn(`⚠️ No activated years found for cycle ${cycle.cycleName}`);
-          if (cycle.cycleYears && cycle.cycleYears.length > 0) {
-            cycles = cycle.cycleYears.map(year => ({
+          if (allCycleYears.length > 0) {
+            cycles = allCycleYears.map(year => ({
               year: year,
               enabled: false,
               isTarget: false
             }));
           }
         }
-
-        // Add target year SEPARATELY for projected value submissions (if enabled)
-        const targetProjectionsEnabled = cycle.targetYearSettings?.hasProjectedSubmission || false;
-
-        console.log(`🎯 Target projections enabled: ${targetProjectionsEnabled}`);
-
-        if (cycle.targetYear && targetProjectionsEnabled) {
-          cycles.push({
-            year: cycle.targetYear,
-            enabled: true,
-            isTarget: true  // This is specifically for projected/target values
-          });
-          console.log(`✅ Added target year ${cycle.targetYear} for projected submissions`);
-        }
       } else {
-        console.warn(`⚠️ Parameter ${parameterId} has no associated cycle`);
+        console.warn(`⚠️ No active cycle found`);
       }
 
-      // Get submitted values for this parameter and user
-      const submittedValues = await YearlyRating.find({
+      // Get submitted values and target lock status for this parameter+user
+      const submittedRatings = await YearlyRating.find({
         parameterId: parameterId,
         userId: userId,
         deletedAt: null
       });
 
-      console.log(`📈 Found ${submittedValues.length} submitted values for parameter ${parameterId}`);
+      console.log(`📈 Found ${submittedRatings.length} rating documents for parameter ${parameterId}`);
+
+      // Determine if target values are locked and get overallTarget
+      const targetValuesLocked = submittedRatings.some(r => r.targetValuesLocked === true);
+      const lockedRating = submittedRatings.find(r => r.targetValuesLocked === true);
+
+      // Infer overallTarget: use stored value, or fall back to last cycle year's projectedValue (legacy)
+      let overallTarget = lockedRating ? lockedRating.overallTarget : null;
+      if (overallTarget === null || overallTarget === undefined) {
+        // Legacy inference: check if there's a projectedValue for the last cycle year
+        const lastYear = allCycleYears.length > 0 ? allCycleYears[allCycleYears.length - 1] : null;
+        if (lastYear) {
+          for (const submission of submittedRatings) {
+            if (submission.ratingValues) {
+              const lastYearValue = submission.ratingValues.find(rv => rv.year === lastYear);
+              if (lastYearValue && lastYearValue.projectedValue !== null && lastYearValue.projectedValue !== undefined) {
+                overallTarget = lastYearValue.projectedValue;
+                console.log(`📌 Inferred overallTarget from legacy last year (${lastYear}) projectedValue: ${overallTarget}`);
+                break;
+              }
+            }
+          }
+        }
+      }
 
       // Map submitted values by cycle year
+      // Process non-locked documents first, then locked document last (so locked values win)
+      const nonLockedRatings = submittedRatings.filter(r => !r.targetValuesLocked);
+      const lockedRatings = submittedRatings.filter(r => r.targetValuesLocked);
+      const orderedRatings = [...nonLockedRatings, ...lockedRatings];
+
       const submittedValuesMap = {};
-      submittedValues.forEach(submission => {
+      orderedRatings.forEach(submission => {
         if (submission.ratingValues && submission.ratingValues.length > 0) {
           submission.ratingValues.forEach(value => {
-            submittedValuesMap[value.year] = {
-              actualValue: value.actualValue,
-              projectedValue: value.projectedValue,
-              textValue: value.textValue,
-              submittedAt: submission.createdAt,
-              isReadOnly: true
-            };
+            // For locked documents, always overwrite. For non-locked, only set if not already present.
+            if (submission.targetValuesLocked) {
+              submittedValuesMap[value.year] = {
+                actualValue: value.actualValue,
+                projectedValue: value.projectedValue,
+                textValue: value.textValue,
+                submittedAt: submission.createdAt,
+                isReadOnly: true
+              };
+            } else {
+              if (!submittedValuesMap[value.year]) {
+                submittedValuesMap[value.year] = {
+                  actualValue: value.actualValue,
+                  projectedValue: value.projectedValue,
+                  textValue: value.textValue,
+                  submittedAt: submission.createdAt,
+                  isReadOnly: true
+                };
+              } else {
+                // Merge: preserve actual values from non-locked docs if locked doc doesn't have them
+                const existing = submittedValuesMap[value.year];
+                if ((existing.actualValue === null || existing.actualValue === undefined) && value.actualValue !== null) {
+                  existing.actualValue = value.actualValue;
+                }
+              }
+            }
           });
         }
       });
 
-      console.log(`✅ Returning ${cycles.length} cycles for parameter ${parameterId}`);
+      console.log(`✅ Returning ${cycles.length} active cycles, ${allCycleYears.length} total years, targetValuesLocked: ${targetValuesLocked}, overallTarget: ${overallTarget}`);
 
       return {
         parameter: {
@@ -467,7 +498,10 @@ class ParameterService {
           maxValue: parameter.maxValue || 100,
           category: parameter.category
         },
+        allCycleYears: allCycleYears,
         cycles: cycles,
+        targetValuesLocked: targetValuesLocked,
+        overallTarget: overallTarget,
         submittedValues: submittedValuesMap
       };
 
