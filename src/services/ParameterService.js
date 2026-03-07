@@ -422,6 +422,27 @@ class ParameterService {
         deletedAt: null
       });
 
+      // Add back any deactivated years that have submitted actual values
+      // so they remain visible (read-only) even when the year is deactivated
+      const activatedYearSet = new Set(cycles.map(c => c.year));
+      submittedRatings.forEach(rating => {
+        if (rating.ratingValues) {
+          rating.ratingValues.forEach(rv => {
+            if (
+              rv.actualValue !== null && rv.actualValue !== undefined &&
+              !activatedYearSet.has(rv.year) &&
+              allCycleYears.includes(rv.year)
+            ) {
+              cycles.push({ year: rv.year, enabled: false, isTarget: false });
+              activatedYearSet.add(rv.year);
+            }
+          });
+        }
+      });
+
+      // Keep cycles sorted by year
+      cycles.sort((a, b) => a.year - b.year);
+
       console.log(`📈 Found ${submittedRatings.length} rating documents for parameter ${parameterId}`);
 
       // Determine if target values are locked and get overallTarget
