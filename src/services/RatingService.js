@@ -562,8 +562,8 @@ class RatingService {
         } else {
           existingRating.ratingValues.push({
             year: cycle,
-            actualValue: values.actualValue || null,
-            projectedValue: values.projectedValue || null,
+            actualValue: values.actualValue !== undefined ? values.actualValue : null,
+            projectedValue: values.projectedValue !== undefined ? values.projectedValue : null,
             textValue: values.textValue || null
           });
         }
@@ -591,8 +591,8 @@ class RatingService {
           categoryId: categoryId, // Use the looked-up category ID
           ratingValues: [{
             year: cycle,
-            actualValue: values.actualValue || null,
-            projectedValue: values.projectedValue || null,
+            actualValue: values.actualValue !== undefined ? values.actualValue : null,
+            projectedValue: values.projectedValue !== undefined ? values.projectedValue : null,
             textValue: values.textValue || null
           }]
         });
@@ -665,10 +665,14 @@ class RatingService {
           throw new Error(`Overall target cannot exceed the maximum value of ${parameter.maxValue}`);
         }
 
-        // Validate that sum of all yearly targets exactly equals overallTarget
-        const yearlySum = targetValues.reduce((sum, tv) => sum + Number(tv.value), 0);
-        if (yearlySum !== numericOverall) {
-          throw new Error(`Sum of yearly targets (${yearlySum}) must exactly equal the overall target (${numericOverall})`);
+        // Validate non-decreasing: targets are running totals, each year >= previous year
+        const sortedTargets = [...targetValues].sort((a, b) => a.year - b.year);
+        for (let i = 1; i < sortedTargets.length; i++) {
+          const prev = Number(sortedTargets[i - 1].value);
+          const curr = Number(sortedTargets[i].value);
+          if (curr < prev) {
+            throw new Error(`Year ${sortedTargets[i].year} value (${curr}) cannot be less than year ${sortedTargets[i - 1].year} value (${prev}). Targets must be non-decreasing.`);
+          }
         }
       }
 
