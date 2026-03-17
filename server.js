@@ -31,6 +31,7 @@ app.use('/api/dashboard', require('./src/routes/dashboardRoutes'));
 
 // ✨ Enhanced Dynamic Cycle Management Routes
 app.use('/api/cycles', require('./src/routes/cycleRoutes'));
+app.use('/api/target-edit-requests', require('./src/routes/targetEditRequestRoutes'));
 app.use('/api/parameter-cycles', require('./src/routes/parameterCycleRoutes'));
 app.use('/api/submissions', require('./src/routes/submissionRoutes'));
 app.use('/api/user-access', require('./src/routes/userCycleAccessRoutes'));

@@ -346,12 +346,23 @@ class ParameterService {
 
       console.log(`📋 Found ${parameters.length} parameters for category: ${categoryName}`);
 
+      // Bulk-fetch locked target status for all parameters in one query
+      const paramIds = parameters.map(p => p._id);
+      const lockedRatings = await YearlyRating.find({
+        parameterId: { $in: paramIds },
+        userId: String(user._id || user.id),
+        targetValuesLocked: true,
+        deletedAt: null
+      }, { parameterId: 1 }).lean();
+      const lockedSet = new Set(lockedRatings.map(r => r.parameterId));
+
       // Map to consistent format
       return parameters.map(param => ({
         id: param._id,
         name: param.parameterName,
         parameterType: param.parameterType,
-        description: param.description || ''
+        description: param.description || '',
+        targetValuesLocked: lockedSet.has(param._id)
       }));
 
     } catch (error) {
@@ -510,6 +521,16 @@ class ParameterService {
 
       console.log(`✅ Returning ${cycles.length} active cycles, ${allCycleYears.length} total years, targetValuesLocked: ${targetValuesLocked}, overallTarget: ${overallTarget}`);
 
+      // Collect unlocked achieved years from all rating docs
+      const unlockedAchievedYears = [];
+      submittedRatings.forEach(r => {
+        if (r.unlockedAchievedYears && r.unlockedAchievedYears.length > 0) {
+          r.unlockedAchievedYears.forEach(y => {
+            if (!unlockedAchievedYears.includes(y)) unlockedAchievedYears.push(y);
+          });
+        }
+      });
+
       return {
         parameter: {
           id: parameter._id,
@@ -522,6 +543,7 @@ class ParameterService {
         allCycleYears: allCycleYears,
         cycles: cycles,
         targetValuesLocked: targetValuesLocked,
+        unlockedAchievedYears: unlockedAchievedYears,
         overallTarget: overallTarget,
         submittedValues: submittedValuesMap
       };

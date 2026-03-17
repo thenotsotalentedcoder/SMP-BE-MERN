@@ -568,6 +568,9 @@ class RatingService {
           });
         }
 
+        // Re-lock this year after achieved value submitted (remove from admin-unlocked list)
+        existingRating.unlockedAchievedYears = (existingRating.unlockedAchievedYears || []).filter(y => y !== cycle);
+
         const updatedRating = await existingRating.save();
 
         return {

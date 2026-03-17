@@ -73,10 +73,9 @@ class CategoryService {
             createdAt: 1
           }
         },
-        { $sort: { sortOrder: -1 } },
+        { $sort: { id: 1 } },
         { $skip: skip },
-        { $limit: pageSize },
-        { $sort: { id: 1 } }
+        { $limit: pageSize }
       ]);
 
       // Get total count

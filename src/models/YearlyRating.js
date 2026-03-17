@@ -40,6 +40,10 @@ const yearlyRatingSchema = new mongoose.Schema({
     type: Boolean,
     default: false // True once strategic target values are submitted for all cycle years
   },
+  unlockedAchievedYears: {
+    type: [Number],
+    default: [] // Years where achieved value edit has been approved by admin
+  },
   deletedAt: {
     type: Date,
     default: null // Soft delete pattern
