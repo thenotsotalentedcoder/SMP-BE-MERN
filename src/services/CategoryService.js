@@ -95,7 +95,7 @@ class CategoryService {
   async getCategoryAsync(id) {
     try {
       const category = await Category.findOne({
-        _id: id,
+        _id: parseInt(id),
         deletedAt: null
       });
 
@@ -136,9 +136,11 @@ class CategoryService {
 
       // Update fields
       category.name = categoryData.Name || categoryData.name || category.name;
-      category.description = categoryData.Description || categoryData.description || category.description;
-      category.sortOrder = categoryData.SortOrder !== undefined ? 
-        (categoryData.SortOrder || categoryData.sortOrder) : category.sortOrder;
+      category.description = categoryData.Description !== undefined ? (categoryData.Description ?? '') : (categoryData.description !== undefined ? (categoryData.description ?? '') : category.description);
+      const newSortOrder = categoryData.SortOrder ?? categoryData.sortOrder;
+      if (newSortOrder !== undefined && newSortOrder !== null) {
+        category.sortOrder = newSortOrder;
+      }
       category.updatedAt = new Date();
 
       const updatedCategory = await category.save();

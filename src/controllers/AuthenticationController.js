@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Department = require('../models/Department');
 const HelperService = require('../services/HelperService');
 const { UserRoles } = require('../middleware/auth');
 
@@ -58,10 +59,21 @@ class AuthenticationController {
       const expirationDate = new Date();
       expirationDate.setHours(expirationDate.getHours() + 12);
 
+      // Fetch department name if user has a deptId
+      let departmentName = null;
+      if (user.deptId) {
+        const dept = await Department.findOne({ _id: user.deptId, deletedAt: null }).lean();
+        if (dept) departmentName = dept.deptName;
+      }
+
+      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.userName;
+
       return res.json({
         token: token,
         role: [user.userRole], // Return as array to match .NET format
-        expiration: expirationDate.toISOString()
+        expiration: expirationDate.toISOString(),
+        fullName: fullName,
+        department: departmentName
       });
 
     } catch (error) {
