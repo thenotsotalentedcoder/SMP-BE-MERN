@@ -306,7 +306,8 @@ class RatingService {
       console.log(`📊 getRatingsByDepartment - deptID: ${deptID}, cycleId: ${cycleId}, categoryId: ${categoryId}`);
 
       const currentFacultyId = currentUser.facultyId;
-      const isAdmin = currentUser.userRole === 'Admin';
+      const qecUsers = new Set(['dirqec@neduet.edu.pk', 'testacch']);
+      const isAdmin = currentUser.userRole === 'Admin' || qecUsers.has(currentUser.userName);
 
       // Build aggregation pipeline to join data (similar to .NET LINQ joins)
       let matchStage = {
