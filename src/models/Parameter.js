@@ -51,6 +51,10 @@ const parameterSchema = new mongoose.Schema({
     default: false    // false = visible to all (backwards compatible)
   },
 
+  maxValue: {
+    type: Number,
+    default: 100  // Default for backward compatibility with migrated documents
+  },
   sortOrder: {
     type: Number,
     default: 0

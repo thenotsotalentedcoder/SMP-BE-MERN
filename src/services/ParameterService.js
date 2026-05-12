@@ -144,6 +144,7 @@ class ParameterService {
           parameterData.IsActive : (parameterData.isActive !== undefined ? parameterData.isActive : true),
         category: parameterData.Category || parameterData.category,
         cycle: parameterData.Cycle || parameterData.cycle,
+        maxValue: parameterData.MaxValue !== undefined ? parameterData.MaxValue : (parameterData.maxValue !== undefined ? parameterData.maxValue : 100),
         parameterRoles: parameterData.ParameterRoles || parameterData.parameterRoles || '',
         // ➕ NEW: Handle group access fields
         accessibleToGroups: parameterData.accessibleToGroups || ['Academic Departments'],
@@ -178,6 +179,12 @@ class ParameterService {
         parameterData.IsActive : (parameterData.isActive !== undefined ? parameterData.isActive : parameter.isActive);
       parameter.category = parameterData.Category || parameterData.category || parameter.category;
       parameter.cycle = parameterData.Cycle || parameterData.cycle || parameter.cycle;
+      // Fix: persist maxValue when provided
+      if (parameterData.MaxValue !== undefined) {
+        parameter.maxValue = parameterData.MaxValue;
+      } else if (parameterData.maxValue !== undefined) {
+        parameter.maxValue = parameterData.maxValue;
+      }
       parameter.parameterRoles = parameterData.ParameterRoles || parameterData.parameterRoles || parameter.parameterRoles;
       // ➕ NEW: Handle group access fields in updates
       if (parameterData.accessibleToGroups !== undefined) {
@@ -537,7 +544,7 @@ class ParameterService {
           name: parameter.parameterName,
           parameterType: parameter.parameterType,
           description: parameter.description,
-          maxValue: parameter.maxValue || 100,
+          maxValue: parameter.maxValue !== undefined && parameter.maxValue !== null ? parameter.maxValue : 100,
           category: parameter.category
         },
         allCycleYears: allCycleYears,
