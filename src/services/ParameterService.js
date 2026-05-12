@@ -145,6 +145,7 @@ class ParameterService {
         category: parameterData.Category || parameterData.category,
         cycle: parameterData.Cycle || parameterData.cycle,
         maxValue: parameterData.MaxValue !== undefined ? parameterData.MaxValue : (parameterData.maxValue !== undefined ? parameterData.maxValue : 100),
+        isDecreasing: parameterData.isDecreasing !== undefined ? parameterData.isDecreasing : false,
         parameterRoles: parameterData.ParameterRoles || parameterData.parameterRoles || '',
         // ➕ NEW: Handle group access fields
         accessibleToGroups: parameterData.accessibleToGroups || ['Academic Departments'],
@@ -184,6 +185,10 @@ class ParameterService {
         parameter.maxValue = parameterData.MaxValue;
       } else if (parameterData.maxValue !== undefined) {
         parameter.maxValue = parameterData.maxValue;
+      }
+      // Fix: persist isDecreasing when provided
+      if (parameterData.isDecreasing !== undefined) {
+        parameter.isDecreasing = parameterData.isDecreasing;
       }
       parameter.parameterRoles = parameterData.ParameterRoles || parameterData.parameterRoles || parameter.parameterRoles;
       // ➕ NEW: Handle group access fields in updates
@@ -545,6 +550,7 @@ class ParameterService {
           parameterType: parameter.parameterType,
           description: parameter.description,
           maxValue: parameter.maxValue !== undefined && parameter.maxValue !== null ? parameter.maxValue : 100,
+          isDecreasing: parameter.isDecreasing === true,
           category: parameter.category
         },
         allCycleYears: allCycleYears,

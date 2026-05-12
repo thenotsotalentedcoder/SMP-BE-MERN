@@ -669,13 +669,21 @@ class RatingService {
           throw new Error(`Overall target cannot exceed the maximum value of ${parameter.maxValue}`);
         }
 
-        // Validate non-decreasing: targets are running totals, each year >= previous year
+        // Validate direction rule across years
         const sortedTargets = [...targetValues].sort((a, b) => a.year - b.year);
         for (let i = 1; i < sortedTargets.length; i++) {
           const prev = Number(sortedTargets[i - 1].value);
           const curr = Number(sortedTargets[i].value);
-          if (curr < prev) {
-            throw new Error(`Year ${sortedTargets[i].year} value (${curr}) cannot be less than year ${sortedTargets[i - 1].year} value (${prev}). Targets must be non-decreasing.`);
+          if (parameter.isDecreasing) {
+            // Decreasing parameter: each year must be <= previous year (non-increasing)
+            if (curr > prev) {
+              throw new Error(`Year ${sortedTargets[i].year} value (${curr}) cannot be greater than year ${sortedTargets[i - 1].year} value (${prev}). Targets must be non-increasing for this parameter.`);
+            }
+          } else {
+            // Increasing parameter (default): each year must be >= previous year (non-decreasing)
+            if (curr < prev) {
+              throw new Error(`Year ${sortedTargets[i].year} value (${curr}) cannot be less than year ${sortedTargets[i - 1].year} value (${prev}). Targets must be non-decreasing.`);
+            }
           }
         }
       }

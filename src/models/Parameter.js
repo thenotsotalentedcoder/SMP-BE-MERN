@@ -55,6 +55,10 @@ const parameterSchema = new mongoose.Schema({
     type: Number,
     default: 100  // Default for backward compatibility with migrated documents
   },
+  isDecreasing: {
+    type: Boolean,
+    default: false  // false = values increase over time (default), true = values decrease (lower is better)
+  },
   sortOrder: {
     type: Number,
     default: 0
