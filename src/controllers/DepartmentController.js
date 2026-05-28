@@ -4,12 +4,13 @@ class DepartmentController {
   // GET /api/departments (exact replica)
   async getDepartments(req, res) {
     try {
-      const { page = 1, pageSize = 10, search = null } = req.query;
+      const { page = 1, pageSize = 10, search = null, facultyId = null } = req.query;
 
       const departments = await DepartmentService.getDepartmentsAsync(
-        parseInt(page), 
-        parseInt(pageSize), 
-        search
+        parseInt(page),
+        parseInt(pageSize),
+        search,
+        facultyId
       );
 
       return res.json({

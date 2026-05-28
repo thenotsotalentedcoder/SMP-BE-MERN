@@ -4,7 +4,7 @@ const Counter = require('../models/Counter');
 
 class DepartmentService {
   // Get departments with pagination and search (exact replica)
-  async getDepartmentsAsync(page = 1, pageSize = 10, search = null) {
+  async getDepartmentsAsync(page = 1, pageSize = 10, search = null, facultyId = null) {
     try {
       const skip = (page - 1) * pageSize;
       
@@ -16,6 +16,11 @@ class DepartmentService {
           { deptName: { $regex: search, $options: 'i' } },
           { deptCode: { $regex: search, $options: 'i' } }
         ];
+      }
+
+      // Filter by faculty if provided (for Dean-scoped views)
+      if (facultyId) {
+        query.faculty = parseInt(facultyId);
       }
 
       // Get total count

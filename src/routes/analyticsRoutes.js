@@ -555,4 +555,23 @@ router.get('/real-time/dashboard',
   }
 );
 
+// ─── NEW: Real analytics dashboard endpoints ───────────────────────────────
+const AnalyticsDashboardController = require('../controllers/AnalyticsDashboardController');
+
+/**
+ * @route   GET /api/analytics/scorecard
+ * @desc    University pulse + 12 pillar scorecard — powers the VC analytics dashboard
+ * @access  Private (All authenticated users)
+ * @query   cycleId, year
+ */
+router.get('/scorecard', AnalyticsDashboardController.getScorecard);
+
+/**
+ * @route   GET /api/analytics/drill
+ * @desc    Parameter-level detail + department league table (drill-down)
+ * @access  Private (All authenticated users)
+ * @query   cycleId, year, categoryId, deptId
+ */
+router.get('/drill', AnalyticsDashboardController.getDrillDown);
+
 module.exports = router;
