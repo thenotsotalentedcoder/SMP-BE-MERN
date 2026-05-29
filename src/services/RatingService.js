@@ -425,11 +425,12 @@ class RatingService {
         if (cycle) {
           console.log(`📅 Filtering by cycle years: ${cycle.activatedYears} + targetYear: ${cycle.targetYear}`);
 
-          // Get all relevant years for this cycle (activated years + target year)
-          const cycleYears = [...(cycle.activatedYears || [])];
-          if (cycle.targetYear && !cycleYears.includes(cycle.targetYear)) {
-            cycleYears.push(cycle.targetYear);
-          }
+          // Get all relevant years for this cycle (all cycle years — includes baseline + activated + target)
+          const cycleYears = [...new Set([
+            ...(cycle.cycleYears    || []),
+            ...(cycle.activatedYears || []),
+            ...(cycle.targetYear ? [cycle.targetYear] : []),
+          ])];
 
           // Filter each rating's yearlyValues to include only this cycle's years
           ratings = ratings.map(rating => ({
@@ -487,6 +488,96 @@ class RatingService {
       console.error('Error getting ratings by department:', error);
       throw error;
     }
+  }
+
+  // GET /api/yearly-rating/export-matrix?cycleId=X
+  // Returns all 83 parameters × all departments in a pivot structure for the matrix Excel export
+  async getExportMatrix(cycleId) {
+    const Cycle    = require('../models/Cycle');
+    const cycle    = await Cycle.findOne({ _id: parseInt(cycleId), deletedAt: null });
+    if (!cycle) throw new Error('Cycle not found');
+
+    // All years for this cycle (baseline + activated + target), sorted
+    const cycleYears = [...new Set([
+      ...(cycle.cycleYears     || []),
+      ...(cycle.activatedYears || []),
+      ...(cycle.targetYear ? [cycle.targetYear] : []),
+    ])].sort((a, b) => a - b);
+
+    const targetYear = cycle.targetYear;
+
+    // 1. Load ALL parameters (83) — Parameters store category as a string name, not a numeric ID
+    //    Sort by sortOrder so pillars come out 1→12 in correct order
+    const allParams = await Parameter.find({ deletedAt: null })
+      .sort({ sortOrder: 1, _id: 1 })
+      .lean();
+
+    // 2. No separate category lookup needed — p.category IS the category name string
+
+    // 3. Load ALL departments ordered by _id
+    const allDepts = await Department.find({ deletedAt: null })
+      .sort({ _id: 1 })
+      .lean();
+
+    // 4. Pull every YearlyRating for this cycle in one aggregation
+    const rawRatings = await YearlyRating.aggregate([
+      { $match: { deletedAt: null } },
+      { $addFields: { userIdInt: { $toInt: '$userId' } } },
+      {
+        $lookup: {
+          from: 'Users',
+          localField: 'userIdInt',
+          foreignField: '_id',
+          as: 'user',
+        }
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: false } },
+      {
+        $project: {
+          parameterId: 1,
+          categoryId:  1,
+          ratingValues: 1,
+          deptId: '$user.deptId',
+        }
+      },
+    ]);
+
+    // 5. Build lookup: deptId → parameterId → { year → { actual, target } }
+    //    Keep only years in cycleYears; merge multiple docs for same dept+param
+    const data = {}; // data[deptId][parameterId][year] = { actual, target }
+    rawRatings.forEach(r => {
+      const deptId  = r.deptId;
+      const paramId = r.parameterId;
+      if (!deptId || !paramId) return;
+
+      if (!data[deptId])          data[deptId]          = {};
+      if (!data[deptId][paramId]) data[deptId][paramId] = {};
+
+      (r.ratingValues || []).forEach(rv => {
+        if (!cycleYears.includes(rv.year)) return;
+        if (!data[deptId][paramId][rv.year]) {
+          data[deptId][paramId][rv.year] = { actual: null, target: null };
+        }
+        const slot = data[deptId][paramId][rv.year];
+        // actual = actualValue; target = projectedValue (annual milestone)
+        if (rv.actualValue    !== null && rv.actualValue    !== undefined) slot.actual = rv.actualValue;
+        if (rv.projectedValue !== null && rv.projectedValue !== undefined) slot.target = rv.projectedValue;
+      });
+    });
+
+    return {
+      cycleYears,
+      targetYear,
+      cycleName: cycle.cycleName || cycle.name,
+      departments: allDepts.map(d => ({ id: d._id, name: d.deptName, code: d.deptCode })),
+      parameters:  allParams.map(p => ({
+        id:           p._id,
+        name:         p.parameterName,
+        categoryName: p.category || 'Unknown',
+      })),
+      // data[deptId][paramId][year] = { actual, target }
+      data,
+    };
   }
 
   // Submit individual parameter for specific cycle (actual values)

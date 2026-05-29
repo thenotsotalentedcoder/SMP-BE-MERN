@@ -12,8 +12,9 @@ router.post('/submit-parameter', authenticateToken, YearlyRatingController.submi
 // ➕ NEW: Submit target values for all cycle years (batch, immutable once saved)
 router.post('/submit-targets', authenticateToken, YearlyRatingController.submitTargetValues);
 
-router.get('/all', authenticateToken, YearlyRatingController.getAllRatings); // New route for ratings report
-router.get('/by-parameter/:parameterId', authenticateToken, YearlyRatingController.getRatingsByParameter); // New route for parameter ratings
+router.get('/all', authenticateToken, YearlyRatingController.getAllRatings);
+router.get('/export-matrix', authenticateToken, YearlyRatingController.getExportMatrix);
+router.get('/by-parameter/:parameterId', authenticateToken, YearlyRatingController.getRatingsByParameter);
 router.get('/', authenticateToken, YearlyRatingController.getPastRatings);
 router.get('/by-department/:deptID', authenticateToken, YearlyRatingController.getRatingsByDepartment);
 

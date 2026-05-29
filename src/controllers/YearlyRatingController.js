@@ -104,6 +104,20 @@ class YearlyRatingController {
     }
   }
 
+  // GET /api/yearly-rating/export-matrix?cycleId=X
+  async getExportMatrix(req, res) {
+    try {
+      const { cycleId } = req.query;
+      if (!cycleId) return res.status(400).json({ Status: false, Message: 'cycleId is required' });
+
+      const matrix = await RatingService.getExportMatrix(cycleId);
+      return res.json({ Status: true, Data: matrix });
+    } catch (error) {
+      console.error('Export matrix error:', error);
+      return res.status(500).json({ Status: false, Message: error.message });
+    }
+  }
+
   // GET /api/yearly-rating/by-department/:deptID (enhanced with cycle and category filters)
   async getRatingsByDepartment(req, res) {
     try {
